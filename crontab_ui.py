@@ -9,7 +9,7 @@ Usage:
 """
 
 # ── Auto-install dependency ───────────────────────────────────────────────────
-import sys, subprocess, os, argparse, glob
+import sys, subprocess, os, argparse, glob, shutil
 
 VENV_DIR = os.path.join(os.path.expanduser("~"), ".local", "share", "crontab-ui", "venv")
 
@@ -142,6 +142,9 @@ STRINGS = {
         "dow_thu": "Thursday (4)", "dow_fri": "Friday (5)",
         "dow_sat": "Saturday (6)", "dow_sun": "Sunday (0)",
         "dow_weekdays": "Mon-Fri (1-5)", "dow_weekend": "Sat-Sun (6,0)",
+        "dow_short": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+        "dow_btn_all": "✱ All", "dow_btn_weekdays": "Weekdays", "dow_btn_weekend": "Weekend",
+        "mo_btn_all": "✱ All",
         "mo_every": "Every month (*)",
         "mo_names": ["Jan","Feb","Mar","Apr","May","Jun",
                      "Jul","Aug","Sep","Oct","Nov","Dec"],
@@ -150,6 +153,13 @@ STRINGS = {
         "pre_daily":     "Daily 00:00",    "pre_daily8":  "Daily 08:00",
         "pre_workday":   "Weekdays 09:00", "pre_weekly":  "Weekly Sun 02:00",
         "pre_monthly":   "1st of month",
+        "bind_copy":     "Copy",
+        "bind_paste":    "Paste",
+        "job_copied":    "Copied: {cmd}",
+        "job_pasted":    "Pasted: {cmd}",
+        "no_job_copied": "No job copied yet",
+        "cmd_not_found":  "Command not found: {cmd}\nSave anyway?",
+        "btn_save_anyway": "Save anyway",
     },
     "th": {
         "app_subtitle":     "จัดการ crontab อย่างง่ายดาย",
@@ -210,6 +220,9 @@ STRINGS = {
         "dow_thu": "พฤหัส (4)",  "dow_fri": "ศุกร์ (5)",
         "dow_sat": "เสาร์ (6)",  "dow_sun": "อาทิตย์ (0)",
         "dow_weekdays": "จ-ศ (1-5)", "dow_weekend": "ส-อา (6,0)",
+        "dow_short": ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."],
+        "dow_btn_all": "✱ ทั้งหมด", "dow_btn_weekdays": "วันทำงาน", "dow_btn_weekend": "วันหยุด",
+        "mo_btn_all": "✱ ทั้งหมด",
         "mo_every": "ทุกเดือน (*)",
         "mo_names": ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.",
                      "ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."],
@@ -218,6 +231,13 @@ STRINGS = {
         "pre_daily":     "ทุกวัน 00:00", "pre_daily8":  "ทุกวัน 08:00",
         "pre_workday":   "วันทำงาน 09:00","pre_weekly": "ทุกอาทิตย์ 02:00",
         "pre_monthly":   "ต้นเดือน 00:00",
+        "bind_copy":     "คัดลอก",
+        "bind_paste":    "วาง",
+        "job_copied":    "คัดลอกแล้ว: {cmd}",
+        "job_pasted":    "วางแล้ว: {cmd}",
+        "no_job_copied": "ยังไม่ได้คัดลอกงาน",
+        "cmd_not_found":  "ไม่พบคำสั่ง: {cmd}\nบันทึกต่อหรือไม่?",
+        "btn_save_anyway": "บันทึกต่อ",
     },
 }
 
@@ -294,21 +314,6 @@ def describe(min_: str, hr: str, dom: str, mo: str, dow: str) -> str:
     return " ".join(parts) if parts else T["desc_custom"]
 
 
-def get_dow_options():
-    return [
-        (T["dow_every"],    "*"),
-        (T["dow_mon"],      "1"), (T["dow_tue"], "2"), (T["dow_wed"], "3"),
-        (T["dow_thu"],      "4"), (T["dow_fri"], "5"),
-        (T["dow_sat"],      "6"), (T["dow_sun"], "0"),
-        (T["dow_weekdays"], "1-5"),
-        (T["dow_weekend"],  "6,0"),
-    ]
-
-def get_mo_options():
-    return [(T["mo_every"], "*")] + [
-        (name, str(i+1)) for i, name in enumerate(T["mo_names"])
-    ]
-
 def get_presets():
     return [
         (T["pre_every_min"], "* * * * *"),
@@ -336,15 +341,16 @@ class ConfirmModal(ModalScreen):
     #dialog Label { margin-bottom: 1; }
     #btn-row { margin-top: 1; align: center middle; }
     """
-    def __init__(self, message: str):
+    def __init__(self, message: str, ok_label: str | None = None):
         super().__init__()
-        self.message = message
+        self._message = message
+        self._ok_label = ok_label
 
     def compose(self) -> ComposeResult:
         with Container(id="dialog"):
-            yield Label(self.message)
+            yield Label(self._message)
             with Horizontal(id="btn-row"):
-                yield Button(T["btn_delete"], variant="error",   id="confirm-yes")
+                yield Button(self._ok_label or T["btn_delete"], variant="error",   id="confirm-yes")
                 yield Button(T["btn_cancel"], variant="default", id="confirm-no")
 
     @on(Button.Pressed, "#confirm-yes")
@@ -356,21 +362,35 @@ class ConfirmModal(ModalScreen):
 # ── Editor Screen ─────────────────────────────────────────────────────────────
 
 class EditorScreen(Screen):
+    DOW_ORDER = [1, 2, 3, 4, 5, 6, 0]  # Mon → Sun display order
+
     CSS = """
-    EditorScreen { background: $background; }
+    EditorScreen { background: #1e1e2e; }
     #editor-container { padding: 1 2; height: 1fr; }
-    .section-title { color: $accent; text-style: bold; margin-top: 1; margin-bottom: 0; }
+    .section-title {
+        color: #89b4fa; text-style: bold;
+        margin-top: 1; margin-bottom: 0;
+    }
     .row { height: auto; margin-bottom: 1; }
-    .field-label { width: 16; content-align: left middle; padding-top: 1; }
+    .field-label { width: 16; content-align: left middle; padding-top: 1; color: #cdd6f4; }
     .field-input { width: 1fr; }
     #preview-box {
-        background: $boost; border: round $accent 60%;
+        background: #313244; border: round #89b4fa 60%;
         padding: 0 1; height: 3; margin-top: 1;
     }
-    #preview-cron  { color: $accent; text-style: bold; }
-    #preview-human { color: $text-muted; }
-    #preset-container { height: auto; margin-bottom: 1; }
-    .preset-btn { margin: 0 1 1 0; min-width: 22; }
+    #preview-cron  { color: #89b4fa; text-style: bold; }
+    #preview-human { color: #a6adc8; }
+    #preset-grid {
+        layout: grid;
+        grid-size: 3;
+        grid-gutter: 1;
+        height: auto;
+        margin-bottom: 1;
+    }
+    .preset-btn { min-width: 18; }
+    .toggle-row { height: auto; margin-bottom: 1; }
+    .toggle-btn { min-width: 6; margin: 0 1 0 0; }
+    .quick-btn  { min-width: 12; margin: 0 1 0 0; }
     #btn-row-editor { height: 3; align: right middle; margin-top: 1; }
     """
     BINDINGS = [
@@ -386,34 +406,54 @@ class EditorScreen(Screen):
         j = self.editing_job or {}
         yield Header(show_clock=True)
         with ScrollableContainer(id="editor-container"):
+            # ── Presets (3-column grid) ──
             yield Static(T["sec_presets"], classes="section-title")
-            with Container(id="preset-container"):
+            with Container(id="preset-grid"):
                 for label, expr in get_presets():
                     safe_id = expr.replace("*","X").replace("/","S").replace(" ","_")
                     yield Button(label, classes="preset-btn", id=f"preset-{safe_id}")
 
+            # ── Custom fields ──
             yield Static(T["sec_custom"], classes="section-title")
             with Horizontal(classes="row"):
                 yield Label(T["lbl_minute"], classes="field-label")
                 yield Input(value=j.get("min","*"), placeholder=T["ph_minute"],
                             id="f-min", classes="field-input")
             with Horizontal(classes="row"):
-                yield Label(T["lbl_hour"],   classes="field-label")
-                yield Input(value=j.get("hr","*"),  placeholder=T["ph_hour"],
-                            id="f-hr",  classes="field-input")
+                yield Label(T["lbl_hour"], classes="field-label")
+                yield Input(value=j.get("hr","*"), placeholder=T["ph_hour"],
+                            id="f-hr", classes="field-input")
             with Horizontal(classes="row"):
-                yield Label(T["lbl_dom"],    classes="field-label")
+                yield Label(T["lbl_dom"], classes="field-label")
                 yield Input(value=j.get("dom","*"), placeholder=T["ph_dom"],
                             id="f-dom", classes="field-input")
-            with Horizontal(classes="row"):
-                yield Label(T["lbl_month"],  classes="field-label")
-                yield Select(options=get_mo_options(), value=j.get("mo","*"),
-                             id="f-mo", classes="field-input")
-            with Horizontal(classes="row"):
-                yield Label(T["lbl_dow"],    classes="field-label")
-                yield Select(options=get_dow_options(), value=j.get("dow","*"),
-                             id="f-dow", classes="field-input")
 
+            # ── Day of Week (toggle buttons) ──
+            yield Static(T["lbl_dow"], classes="section-title")
+            with Horizontal(classes="toggle-row"):
+                yield Button(T["dow_btn_all"], id="dow-all", classes="quick-btn", variant="success")
+                yield Button(T["dow_btn_weekdays"], id="dow-weekdays", classes="quick-btn")
+                yield Button(T["dow_btn_weekend"], id="dow-weekend", classes="quick-btn")
+            with Horizontal(classes="toggle-row"):
+                for dv in self.DOW_ORDER:
+                    yield Button(T["dow_short"][dv], id=f"dow-v-{dv}", classes="toggle-btn")
+            with Horizontal(classes="row"):
+                yield Input(value=j.get("dow","*"), id="f-dow", classes="field-input")
+
+            # ── Month (toggle buttons) ──
+            yield Static(T["lbl_month"], classes="section-title")
+            with Horizontal(classes="toggle-row"):
+                yield Button(T["mo_btn_all"], id="mo-all", classes="quick-btn", variant="success")
+            with Horizontal(classes="toggle-row"):
+                for i in range(6):
+                    yield Button(T["mo_names"][i], id=f"mo-v-{i+1}", classes="toggle-btn")
+            with Horizontal(classes="toggle-row"):
+                for i in range(6, 12):
+                    yield Button(T["mo_names"][i], id=f"mo-v-{i+1}", classes="toggle-btn")
+            with Horizontal(classes="row"):
+                yield Input(value=j.get("mo","*"), id="f-mo", classes="field-input")
+
+            # ── Command ──
             yield Static(T["sec_command"], classes="section-title")
             with Horizontal(classes="row"):
                 yield Label(T["lbl_command"], classes="field-label")
@@ -430,40 +470,181 @@ class EditorScreen(Screen):
         yield Footer()
 
     def on_mount(self):
+        self._sync_dow_toggles()
+        self._sync_mo_toggles()
         self.update_preview()
         self.query_one("#f-min").focus()
 
+    # ── Toggle helpers ────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _parse_values(value: str) -> set[int] | None:
+        """Parse cron field → set of ints, or None if '*'."""
+        v = value.strip()
+        if v == "*":
+            return None
+        result = set()
+        for part in v.split(","):
+            part = part.strip()
+            if "-" in part and "/" not in part:
+                try:
+                    lo, hi = part.split("-", 1)
+                    result.update(range(int(lo), int(hi) + 1))
+                except ValueError:
+                    pass
+            else:
+                try:
+                    result.add(int(part))
+                except ValueError:
+                    pass
+        return result
+
+    def _sync_dow_toggles(self):
+        """Set DOW toggle button states from the Input value."""
+        val = self.query_one("#f-dow", Input).value.strip()
+        if val == "*":
+            for dv in range(7):
+                try: self.query_one(f"#dow-v-{dv}", Button).variant = "default"
+                except Exception: pass
+        else:
+            parsed = self._parse_values(val) or set()
+            for dv in range(7):
+                try:
+                    self.query_one(f"#dow-v-{dv}", Button).variant = (
+                        "success" if dv in parsed else "default")
+                except Exception: pass
+        self.query_one("#dow-all", Button).variant = "success" if val == "*" else "default"
+        self.query_one("#dow-weekdays", Button).variant = (
+            "success" if val in ("1-5", "1,2,3,4,5") else "default")
+        self.query_one("#dow-weekend", Button).variant = (
+            "success" if val in ("0,6", "6,0") else "default")
+
+    def _sync_mo_toggles(self):
+        """Set Month toggle button states from the Input value."""
+        val = self.query_one("#f-mo", Input).value.strip()
+        if val == "*":
+            for mv in range(1, 13):
+                try: self.query_one(f"#mo-v-{mv}", Button).variant = "default"
+                except Exception: pass
+        else:
+            parsed = self._parse_values(val) or set()
+            for mv in range(1, 13):
+                try:
+                    self.query_one(f"#mo-v-{mv}", Button).variant = (
+                        "success" if mv in parsed else "default")
+                except Exception: pass
+        self.query_one("#mo-all", Button).variant = "success" if val == "*" else "default"
+
+    def _dow_from_toggles(self):
+        """Compute DOW value from toggle states → update Input."""
+        active = [dv for dv in range(7)
+                  if self.query_one(f"#dow-v-{dv}", Button).variant == "success"]
+        if not active or len(active) == 7:
+            val = "*"
+            if len(active) == 7:
+                for dv in range(7):
+                    self.query_one(f"#dow-v-{dv}", Button).variant = "default"
+        else:
+            val = ",".join(str(v) for v in sorted(active))
+        self.query_one("#f-dow", Input).value = val
+        self.query_one("#dow-all", Button).variant = "success" if val == "*" else "default"
+        self.query_one("#dow-weekdays", Button).variant = (
+            "success" if sorted(active) == [1,2,3,4,5] else "default")
+        self.query_one("#dow-weekend", Button).variant = (
+            "success" if sorted(active) == [0,6] else "default")
+
+    def _mo_from_toggles(self):
+        """Compute Month value from toggle states → update Input."""
+        active = [mv for mv in range(1, 13)
+                  if self.query_one(f"#mo-v-{mv}", Button).variant == "success"]
+        if not active or len(active) == 12:
+            val = "*"
+            if len(active) == 12:
+                for mv in range(1, 13):
+                    self.query_one(f"#mo-v-{mv}", Button).variant = "default"
+        else:
+            val = ",".join(str(v) for v in sorted(active))
+        self.query_one("#f-mo", Input).value = val
+        self.query_one("#mo-all", Button).variant = "success" if val == "*" else "default"
+
+    # ── Event handlers ────────────────────────────────────────────────────────
+
     def on_button_pressed(self, event: Button.Pressed):
         bid = event.button.id or ""
+        # Preset buttons
         if bid.startswith("preset-"):
-            expr  = bid[7:].replace("X","*").replace("S","/").replace("_"," ")
+            expr = bid[7:].replace("X","*").replace("S","/").replace("_"," ")
             parts = expr.split()
             if len(parts) == 5:
                 self.query_one("#f-min", Input).value = parts[0]
                 self.query_one("#f-hr",  Input).value = parts[1]
                 self.query_one("#f-dom", Input).value = parts[2]
-                mo_vals  = {v for _, v in get_mo_options()}
-                dow_vals = {v for _, v in get_dow_options()}
-                self.query_one("#f-mo",  Select).value = parts[3] if parts[3] in mo_vals  else "*"
-                self.query_one("#f-dow", Select).value = parts[4] if parts[4] in dow_vals else "*"
+                self.query_one("#f-mo",  Input).value = parts[3]
+                self.query_one("#f-dow", Input).value = parts[4]
+                self._sync_dow_toggles()
+                self._sync_mo_toggles()
                 self.update_preview()
-        elif bid == "btn-save":   self.action_save()
-        elif bid == "btn-cancel": self.action_cancel()
+        # DOW quick buttons
+        elif bid == "dow-all":
+            self.query_one("#f-dow", Input).value = "*"
+            self._sync_dow_toggles()
+            self.update_preview()
+        elif bid == "dow-weekdays":
+            self.query_one("#f-dow", Input).value = "1-5"
+            self._sync_dow_toggles()
+            self.update_preview()
+        elif bid == "dow-weekend":
+            self.query_one("#f-dow", Input).value = "0,6"
+            self._sync_dow_toggles()
+            self.update_preview()
+        # DOW individual toggle
+        elif bid.startswith("dow-v-"):
+            dv = int(bid[6:])
+            current = self.query_one("#f-dow", Input).value.strip()
+            if current == "*":
+                for d in range(7):
+                    self.query_one(f"#dow-v-{d}", Button).variant = "default"
+            btn = self.query_one(f"#dow-v-{dv}", Button)
+            btn.variant = "default" if btn.variant == "success" else "success"
+            self._dow_from_toggles()
+            self.update_preview()
+        # Month quick button
+        elif bid == "mo-all":
+            self.query_one("#f-mo", Input).value = "*"
+            self._sync_mo_toggles()
+            self.update_preview()
+        # Month individual toggle
+        elif bid.startswith("mo-v-"):
+            mv = int(bid[5:])
+            current = self.query_one("#f-mo", Input).value.strip()
+            if current == "*":
+                for m in range(1, 13):
+                    self.query_one(f"#mo-v-{m}", Button).variant = "default"
+            btn = self.query_one(f"#mo-v-{mv}", Button)
+            btn.variant = "default" if btn.variant == "success" else "success"
+            self._mo_from_toggles()
+            self.update_preview()
+        # Save / Cancel
+        elif bid == "btn-save":
+            self.action_save()
+        elif bid == "btn-cancel":
+            self.action_cancel()
 
     @on(Input.Changed)
-    def _ic(self, _): self.update_preview()
-    @on(Select.Changed)
-    def _sc(self, _): self.update_preview()
+    def _ic(self, event: Input.Changed):
+        if event.input.id == "f-dow":
+            self._sync_dow_toggles()
+        elif event.input.id == "f-mo":
+            self._sync_mo_toggles()
+        self.update_preview()
 
     def get_fields(self):
-        mo_val  = self.query_one("#f-mo",  Select).value
-        dow_val = self.query_one("#f-dow", Select).value
         return (
             self.query_one("#f-min", Input).value.strip() or "*",
             self.query_one("#f-hr",  Input).value.strip() or "*",
             self.query_one("#f-dom", Input).value.strip() or "*",
-            mo_val  if mo_val  != Select.BLANK else "*",
-            dow_val if dow_val != Select.BLANK else "*",
+            self.query_one("#f-mo",  Input).value.strip() or "*",
+            self.query_one("#f-dow", Input).value.strip() or "*",
             self.query_one("#f-cmd", Input).value.strip(),
         )
 
@@ -471,13 +652,26 @@ class EditorScreen(Screen):
         min_, hr, dom, mo, dow, cmd = self.get_fields()
         cron = f"{min_} {hr} {dom} {mo} {dow}"
         self.query_one("#preview-cron",  Static).update(
-            f"[bold cyan]{cron}[/] {cmd or '/your/command'}")
+            f"[bold #89b4fa]{cron}[/] {cmd or '/your/command'}")
         self.query_one("#preview-human", Static).update(describe(min_, hr, dom, mo, dow))
 
     def action_save(self):
         min_, hr, dom, mo, dow, cmd = self.get_fields()
         if not cmd:
             self.notify(T["err_no_cmd"], severity="error")
+            return
+        # extract executable from command
+        parts = cmd.split()
+        exe = parts[0]
+        found = shutil.which(exe) is not None or os.path.isfile(exe)
+        if not found:
+            def on_confirm(confirmed):
+                if confirmed:
+                    self.dismiss({"min": min_, "hr": hr, "dom": dom, "mo": mo, "dow": dow,
+                                  "cmd": cmd, "raw": f"{min_} {hr} {dom} {mo} {dow} {cmd}"})
+            self.app.push_screen(
+                ConfirmModal(T["cmd_not_found"].format(cmd=exe),
+                             ok_label=T["btn_save_anyway"]), on_confirm)
             return
         self.dismiss({"min": min_, "hr": hr, "dom": dom, "mo": mo, "dow": dow,
                       "cmd": cmd, "raw": f"{min_} {hr} {dom} {mo} {dow} {cmd}"})
@@ -490,16 +684,11 @@ class EditorScreen(Screen):
 
 class MainScreen(Screen):
     CSS = """
-    MainScreen { background: $background; }
-    #top-bar {
-        height: 3; background: $boost; padding: 0 2;
-        align: left middle; border-bottom: solid $accent 40%;
-    }
-    #top-bar Label { color: $accent; text-style: bold; }
+    MainScreen { background: #1e1e2e; }
     #job-table { height: 1fr; }
     #bottom-bar {
-        height: 3; background: $boost;
-        border-top: solid $primary 40%; padding: 0 2; align: left middle;
+        height: 3; background: #313244;
+        border-top: solid #a6e3a1 40%; padding: 0 2; align: left middle;
     }
     """
     BINDINGS = [
@@ -507,18 +696,18 @@ class MainScreen(Screen):
         Binding("e",      "edit_job",   T["bind_edit"]),
         Binding("delete", "delete_job", T["bind_delete"]),
         Binding("r",      "reload",     T["bind_reload"]),
+        Binding("ctrl+c", "copy_job",   T["bind_copy"]),
+        Binding("ctrl+v", "paste_job",  T["bind_paste"]),
         Binding("q",      "quit",       T["bind_quit"]),
     ]
 
     def __init__(self):
         super().__init__()
         self.jobs: list[dict] = []
+        self._clipboard: dict | None = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        with Horizontal(id="top-bar"):
-            yield Label(T["main_topbar"])
-            yield Label(T["main_hints"])
         yield DataTable(id="job-table", zebra_stripes=True, cursor_type="row")
         with Horizontal(id="bottom-bar"):
             yield Static("", id="status-msg")
@@ -581,6 +770,28 @@ class MainScreen(Screen):
                 self._status(T["save_failed"].format(msg=msg), error=True)
         self.app.push_screen(EditorScreen(job=job), done)
 
+    def action_copy_job(self):
+        tbl = self.query_one(DataTable)
+        if not self.jobs or tbl.cursor_row is None: return
+        idx = tbl.cursor_row
+        if idx >= len(self.jobs): return
+        self._clipboard = dict(self.jobs[idx])
+        self._status(T["job_copied"].format(cmd=self._clipboard["cmd"][:40]))
+
+    def action_paste_job(self):
+        if self._clipboard is None:
+            self._status(T["no_job_copied"], error=True)
+            return
+        new_job = dict(self._clipboard)
+        self.jobs.append(new_job)
+        ok, msg = save_crontab(self.jobs)
+        if ok:
+            self.action_reload()
+            self._status(T["job_pasted"].format(cmd=new_job["cmd"][:40]))
+        else:
+            self.jobs.pop()
+            self._status(T["save_failed"].format(msg=msg), error=True)
+
     def action_delete_job(self):
         tbl = self.query_one(DataTable)
         if not self.jobs or tbl.cursor_row is None: return
@@ -608,8 +819,17 @@ class MainScreen(Screen):
 class CrontabUI(App):
     TITLE     = "crontab-ui"
     SUB_TITLE = T["app_subtitle"]
-    CSS       = ""
-    BINDINGS  = [Binding("ctrl+c", "quit", T["bind_quit"], priority=True)]
+
+    CSS       = """
+    Screen { background: #1e1e2e; }
+    Header { background: #313244; }
+    Footer { background: #313244; }
+    DataTable > .datatable--header { background: #45475a; color: #cdd6f4; text-style: bold; }
+    DataTable > .datatable--cursor { background: #585b70; }
+    Input { background: #313244; border: tall #585b70; }
+    Input:focus { border: tall #89b4fa; }
+    """
+    BINDINGS  = [Binding("q", "quit", T["bind_quit"])]
 
     def on_mount(self):
         self.push_screen(MainScreen())

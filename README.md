@@ -87,9 +87,13 @@ Displays all existing cron jobs loaded from your current crontab, with a human-r
 
 ## Editor Screen
 
-- Click any **Preset** button (Every 5 min, Weekdays 09:00, 1st of month, etc.)
-- Or set each field manually (minute / hour / day / month / day of week)
+- Click any **Preset** button in a 3-column grid (Every 5 min, Weekdays 09:00, 1st of month, etc.)
+- Set **Minute**, **Hour**, **Day of Month** manually via input fields
+- **Day of Week**: toggle buttons (Mon–Sun) with quick-select buttons (All / Weekdays / Weekend)
+- **Month**: toggle buttons (Jan–Dec) with quick-select button (All)
+- Multi-select supported — generates proper cron syntax (e.g., `1,3,5` or `3,7,12`)
 - **Live preview** updates the cron expression and description in real time
+- **Catppuccin Mocha** dark theme for comfortable terminal use
 - Press `Ctrl+S` to save — writes directly to crontab, no vim needed
 
 ---
