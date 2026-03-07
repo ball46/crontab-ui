@@ -123,6 +123,11 @@ Displays all existing cron jobs loaded from your current crontab, with a human-r
 
 ```
 crontab-ui/
+├── .github/
+│   ├── ISSUE_TEMPLATE/
+│   │   ├── bug_report.md
+│   │   └── feature_request.md
+│   └── pull_request_template.md
 ├── crontab_ui.py     # main app (Textual TUI) — EN/TH i18n built-in
 ├── install.sh        # installer — one-liner + auto Python install
 ├── LICENSE           # MIT License
