@@ -2,7 +2,7 @@
 
 Interactive TUI for managing crontab — no syntax memorization, no vim required.
 
-![Python](https://img.shields.io/badge/python-3.8+-blue) ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)
+![Python](https://img.shields.io/badge/python-3.8+-blue) ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey) ![License](https://img.shields.io/badge/license-MIT-green)
 
 > 🇹🇭 รองรับภาษาไทย — Thai language supported
 
@@ -118,7 +118,17 @@ Displays all existing cron jobs loaded from your current crontab, with a human-r
 
 ```
 crontab-ui/
-├── crontab_ui.py   # main app (Textual TUI) — EN/TH i18n built-in
-├── install.sh      # installer — one-liner + auto Python install
+├── crontab_ui.py     # main app (Textual TUI) — EN/TH i18n built-in
+├── install.sh        # installer — one-liner + auto Python install
+├── LICENSE           # MIT License
+├── CONTRIBUTING.md   # contribution guidelines
+├── CHANGELOG.md      # version history
+├── .gitignore
 └── README.md
 ```
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
