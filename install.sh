@@ -5,7 +5,7 @@
 
 set -e
 
-REPO_RAW="https://raw.githubusercontent.com/yourname/crontab-ui/main"
+REPO_RAW="https://raw.githubusercontent.com/ball46/crontab-ui/main"
 INSTALL_DIR="$HOME/.local/bin"
 SCRIPT_NAME="crontab-ui"
 MIN_PYTHON_MINOR=8

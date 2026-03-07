@@ -13,7 +13,7 @@ Interactive TUI for managing crontab — no syntax memorization, no vim required
 ### Option 1 — One-liner (recommended)
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/yourname/crontab-ui/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/ball46/crontab-ui/main/install.sh | bash
 ```
 
 The installer handles everything automatically:
@@ -25,7 +25,7 @@ The installer handles everything automatically:
 ### Option 2 — Clone and install
 
 ```bash
-git clone https://github.com/yourname/crontab-ui.git
+git clone https://github.com/ball46/crontab-ui.git
 cd crontab-ui
 chmod +x install.sh && ./install.sh
 ```
