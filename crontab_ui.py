@@ -11,10 +11,31 @@ Usage:
 # ── Auto-install dependency ───────────────────────────────────────────────────
 import sys, subprocess, os, argparse
 
+def _ensure_pip():
+    """Install pip if missing (common on minimal/VPS Python installs)."""
+    try:
+        import pip  # noqa: F401
+    except ImportError:
+        print("📦 pip not found — installing pip...")
+        try:
+            import ensurepip
+            ensurepip.bootstrap(upgrade=True)
+        except Exception:
+            # ensurepip may be missing on very minimal installs — try get-pip.py
+            import urllib.request, tempfile
+            url = "https://bootstrap.pypa.io/get-pip.py"
+            tmp = os.path.join(tempfile.gettempdir(), "get-pip.py")
+            urllib.request.urlretrieve(url, tmp)
+            subprocess.run([sys.executable, tmp, "--quiet",
+                            "--break-system-packages"], check=True)
+        print("✅ pip installed")
+
+
 def _ensure_textual():
     try:
         import textual  # noqa: F401
     except ImportError:
+        _ensure_pip()
         print("📦 Installing textual...")
         result = subprocess.run(
             [sys.executable, "-m", "pip", "install", "textual", "--quiet"],

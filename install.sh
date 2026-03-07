@@ -125,6 +125,34 @@ else
     success "Python installed: $PYTHON_BIN ($($PYTHON_BIN --version))"
 fi
 
+# ── 2b. Ensure pip is available ───────────────────────────────────────────────
+if ! "$PYTHON_BIN" -m pip --version &>/dev/null; then
+    warn "pip not found — installing pip..."
+    if "$PYTHON_BIN" -m ensurepip --upgrade &>/dev/null; then
+        success "pip installed via ensurepip"
+    else
+        # ensurepip missing (common on minimal VPS) — try installing pip package
+        case "$OS_ID" in
+            ubuntu|debian|linuxmint|pop)
+                sudo apt-get install -y python3-pip -qq 2>/dev/null ;;
+            fedora|rhel|centos|rocky|almalinux)
+                sudo dnf install -y python3-pip 2>/dev/null ;;
+            arch|manjaro|endeavouros)
+                sudo pacman -Sy --noconfirm python-pip 2>/dev/null ;;
+        esac
+        # Final fallback: get-pip.py
+        if ! "$PYTHON_BIN" -m pip --version &>/dev/null; then
+            info "Trying get-pip.py..."
+            if command -v curl &>/dev/null; then
+                curl -sSL https://bootstrap.pypa.io/get-pip.py | "$PYTHON_BIN" - --quiet --break-system-packages
+            elif command -v wget &>/dev/null; then
+                wget -qO- https://bootstrap.pypa.io/get-pip.py | "$PYTHON_BIN" - --quiet --break-system-packages
+            fi
+        fi
+        "$PYTHON_BIN" -m pip --version &>/dev/null && success "pip installed" || warn "pip install failed — textual will be installed on first run"
+    fi
+fi
+
 # ── 3. Download / copy script ─────────────────────────────────────────────────
 mkdir -p "$INSTALL_DIR"
 SCRIPT_PATH="$INSTALL_DIR/$SCRIPT_NAME"
