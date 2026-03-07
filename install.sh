@@ -125,33 +125,35 @@ else
     success "Python installed: $PYTHON_BIN ($($PYTHON_BIN --version))"
 fi
 
-# ── 2b. Ensure pip is available ───────────────────────────────────────────────
-if ! "$PYTHON_BIN" -m pip --version &>/dev/null; then
-    warn "pip not found — installing pip..."
-    if "$PYTHON_BIN" -m ensurepip --upgrade &>/dev/null; then
-        success "pip installed via ensurepip"
-    else
-        # ensurepip missing (common on minimal VPS) — try installing pip package
+# ── 2b. Create venv and install textual ───────────────────────────────────────
+VENV_DIR="$HOME/.local/share/crontab-ui/venv"
+
+if [ ! -d "$VENV_DIR" ]; then
+    info "Creating virtual environment..."
+    mkdir -p "$(dirname "$VENV_DIR")"
+
+    # Ensure venv module is available
+    if ! "$PYTHON_BIN" -m venv --help &>/dev/null; then
+        warn "python3-venv not found — installing..."
         case "$OS_ID" in
             ubuntu|debian|linuxmint|pop)
                 sudo apt-get update -qq 2>/dev/null || true
-                sudo apt-get install -y python3-pip -qq 2>/dev/null || true ;;
+                sudo apt-get install -y python3-venv -qq 2>/dev/null || true ;;
             fedora|rhel|centos|rocky|almalinux)
-                sudo dnf install -y python3-pip 2>/dev/null || true ;;
-            arch|manjaro|endeavouros)
-                sudo pacman -Sy --noconfirm python-pip 2>/dev/null || true ;;
+                sudo dnf install -y python3-libs 2>/dev/null || true ;;
         esac
-        # Final fallback: get-pip.py
-        if ! "$PYTHON_BIN" -m pip --version &>/dev/null; then
-            info "Trying get-pip.py..."
-            if command -v curl &>/dev/null; then
-                curl -sSL https://bootstrap.pypa.io/get-pip.py | "$PYTHON_BIN" - --quiet --break-system-packages || true
-            elif command -v wget &>/dev/null; then
-                wget -qO- https://bootstrap.pypa.io/get-pip.py | "$PYTHON_BIN" - --quiet --break-system-packages || true
-            fi
-        fi
-        "$PYTHON_BIN" -m pip --version &>/dev/null && success "pip installed" || warn "pip install failed — textual will be installed on first run"
     fi
+
+    "$PYTHON_BIN" -m venv "$VENV_DIR" || error "Failed to create virtual environment"
+    success "Virtual environment created"
+fi
+
+VENV_PIP="$VENV_DIR/bin/pip"
+if [ -f "$VENV_PIP" ]; then
+    info "Installing textual in venv..."
+    "$VENV_PIP" install textual --quiet && success "textual installed" || warn "textual install failed — will retry on first run"
+else
+    warn "venv pip not found — textual will be installed on first run"
 fi
 
 # ── 3. Download / copy script ─────────────────────────────────────────────────
@@ -209,5 +211,4 @@ echo -e "  ${CYAN}crontab-ui${NC}            # auto-detect language"
 echo -e "  ${CYAN}crontab-ui --lang en${NC}  # English"
 echo -e "  ${CYAN}crontab-ui --lang th${NC}  # Thai"
 echo ""
-echo "  (textual will be installed automatically on first run)"
 echo ""

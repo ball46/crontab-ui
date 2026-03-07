@@ -18,9 +18,9 @@ curl -sSL https://raw.githubusercontent.com/ball46/crontab-ui/main/install.sh | 
 
 The installer handles everything automatically:
 - Checks if Python is installed — **installs it if missing** (Ubuntu, Debian, Fedora, Arch, macOS)
-- Checks if `pip` is available — **installs it if missing** (ensurepip / package manager / get-pip.py)
+- Creates an **isolated virtual environment** (`~/.local/share/crontab-ui/venv`)
+- Installs `textual` inside the venv — no system packages affected
 - Downloads the script from GitHub
-- Installs `textual` automatically on first run
 - Adds `~/.local/bin` to PATH
 
 ### Option 2 — Clone and install

@@ -9,45 +9,64 @@ Usage:
 """
 
 # ── Auto-install dependency ───────────────────────────────────────────────────
-import sys, subprocess, os, argparse
+import sys, subprocess, os, argparse, glob
 
-def _ensure_pip():
-    """Install pip if missing (common on minimal/VPS Python installs)."""
-    try:
-        import pip  # noqa: F401
-    except ImportError:
-        print("📦 pip not found — installing pip...")
-        try:
-            import ensurepip
-            ensurepip.bootstrap(upgrade=True)
-        except Exception:
-            # ensurepip may be missing on very minimal installs — try get-pip.py
-            import urllib.request, tempfile
-            url = "https://bootstrap.pypa.io/get-pip.py"
-            tmp = os.path.join(tempfile.gettempdir(), "get-pip.py")
-            urllib.request.urlretrieve(url, tmp)
-            subprocess.run([sys.executable, tmp, "--quiet",
-                            "--break-system-packages"], check=True)
-        print("✅ pip installed")
+VENV_DIR = os.path.join(os.path.expanduser("~"), ".local", "share", "crontab-ui", "venv")
+
+
+def _activate_venv():
+    """Add venv site-packages to sys.path so imports work without activating."""
+    for pattern in [os.path.join(VENV_DIR, "lib", "python*", "site-packages"),
+                    os.path.join(VENV_DIR, "Lib", "site-packages")]:
+        for sp in glob.glob(pattern):
+            if sp not in sys.path:
+                sys.path.insert(0, sp)
 
 
 def _ensure_textual():
+    # 1. Already importable (system or active venv)?
     try:
         import textual  # noqa: F401
+        return
     except ImportError:
-        _ensure_pip()
-        print("📦 Installing textual...")
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "textual", "--quiet"],
-            capture_output=False,
-        )
-        if result.returncode != 0:
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install", "textual",
-                 "--quiet", "--break-system-packages"],
-                check=True,
-            )
-        print("✅ textual installed — launching crontab-ui...\n")
+        pass
+
+    # 2. Our managed venv already has it?
+    _activate_venv()
+    try:
+        import textual  # noqa: F401
+        return
+    except ImportError:
+        pass
+
+    # 3. Create venv and install textual inside it
+    print("📦 Setting up crontab-ui environment...")
+    os.makedirs(os.path.dirname(VENV_DIR), exist_ok=True)
+
+    if not os.path.isdir(VENV_DIR):
+        try:
+            subprocess.run([sys.executable, "-m", "venv", VENV_DIR],
+                           check=True, capture_output=True)
+        except subprocess.CalledProcessError:
+            # python3-venv may not be installed
+            print("📦 Installing python3-venv...")
+            subprocess.run(["sudo", "apt-get", "install", "-y",
+                            "python3-venv", "-qq"],
+                           capture_output=True)
+            subprocess.run([sys.executable, "-m", "venv", VENV_DIR],
+                           check=True)
+
+    # Find python inside venv
+    venv_py = os.path.join(VENV_DIR, "bin", "python3")
+    if not os.path.exists(venv_py):
+        venv_py = os.path.join(VENV_DIR, "bin", "python")
+
+    print("📦 Installing textual...")
+    subprocess.run([venv_py, "-m", "pip", "install", "textual", "--quiet"],
+                   check=True)
+
+    _activate_venv()
+    print("✅ textual installed — launching crontab-ui...\n")
 
 _ensure_textual()
 # ─────────────────────────────────────────────────────────────────────────────
