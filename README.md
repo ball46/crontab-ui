@@ -39,6 +39,7 @@ chmod +x install.sh && ./install.sh
 crontab-ui               # auto-detect language from system locale
 crontab-ui --lang en     # force English
 crontab-ui --lang th     # force Thai (ภาษาไทย)
+crontab-ui -h            # show help: keybindings, supported languages, examples
 CRONTAB_UI_LANG=en crontab-ui   # via environment variable
 ```
 

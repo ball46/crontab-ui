@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2026-03-08
+
+### Added
+- **Help flag** (`-h` / `--help`) — shows supported languages, all keybindings, and usage examples
+
+---
+
 ## [1.1.0] - 2026-03-07
 
 ### Changed

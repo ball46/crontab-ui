@@ -244,8 +244,38 @@ STRINGS = {
 
 def detect_lang() -> str:
     """Priority: --lang arg > CRONTAB_UI_LANG env > system LANG > default en"""
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--lang", choices=["en", "th"], default=None)
+    parser = argparse.ArgumentParser(
+        prog="crontab-ui",
+        description="Interactive TUI for managing crontab — no need to memorize cron syntax.",
+        epilog="""
+Supported languages (--lang):
+  en    English (default)
+  th    Thai / ภาษาไทย
+
+  Language is auto-detected from system locale.
+  Override with --lang, or set CRONTAB_UI_LANG environment variable.
+
+Keybindings inside the TUI:
+  n          Create a new cron job
+  e          Edit the selected job
+  Delete     Delete the selected job
+  Ctrl+C     Copy the selected job
+  Ctrl+V     Paste a copied job
+  r          Reload crontab from system
+  q          Quit
+  Ctrl+S     Save (in editor)
+  Escape     Cancel / go back
+
+Examples:
+  crontab-ui                  # auto-detect language
+  crontab-ui --lang th        # force Thai
+  crontab-ui --lang en        # force English
+  CRONTAB_UI_LANG=th crontab-ui
+""",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--lang", choices=["en", "th"], default=None,
+                        help="UI language (en=English, th=Thai)")
     args, _ = parser.parse_known_args()
     if args.lang:
         return args.lang
