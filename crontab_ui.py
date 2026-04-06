@@ -358,6 +358,75 @@ def get_presets():
     ]
 
 
+def validate_cron_field(value: str, min_val: int, max_val: int) -> tuple[bool, str]:
+    """Validate a single cron field value. Returns (ok, error_message)."""
+    v = value.strip()
+    if not v:
+        return False, "Field cannot be empty"
+    if " " in v:
+        return False, f"Invalid value: {v}"
+    if v == "*":
+        return True, ""
+
+    def _check_number(s: str) -> tuple[bool, str]:
+        try:
+            n = int(s)
+        except ValueError:
+            return False, f"Invalid value: {s}"
+        if n < min_val or n > max_val:
+            return False, f"{s} out of range ({min_val}-{max_val})"
+        return True, ""
+
+    def _check_step(s: str) -> tuple[bool, str]:
+        try:
+            step = int(s)
+        except ValueError:
+            return False, f"Invalid step: {s}"
+        if step <= 0:
+            return False, f"Step must be positive: {s}"
+        return True, ""
+
+    def _check_range_part(part: str) -> tuple[bool, str]:
+        if "/" in part:
+            base, step = part.split("/", 1)
+            ok, msg = _check_step(step)
+            if not ok:
+                return ok, msg
+            if base == "*":
+                return True, ""
+            # base is a range like "1-30"
+            if "-" in base:
+                lo_s, hi_s = base.split("-", 1)
+                ok, msg = _check_number(lo_s)
+                if not ok:
+                    return ok, msg
+                ok, msg = _check_number(hi_s)
+                if not ok:
+                    return ok, msg
+                if int(lo_s) > int(hi_s):
+                    return False, f"Invalid range: {lo_s}-{hi_s}"
+                return True, ""
+            return _check_number(base)
+        if "-" in part:
+            lo_s, hi_s = part.split("-", 1)
+            ok, msg = _check_number(lo_s)
+            if not ok:
+                return ok, msg
+            ok, msg = _check_number(hi_s)
+            if not ok:
+                return ok, msg
+            if int(lo_s) > int(hi_s):
+                return False, f"Invalid range: {lo_s}-{hi_s}"
+            return True, ""
+        return _check_number(part)
+
+    for part in v.split(","):
+        ok, msg = _check_range_part(part.strip())
+        if not ok:
+            return ok, msg
+    return True, ""
+
+
 # ── Confirm Modal ─────────────────────────────────────────────────────────────
 
 class ConfirmModal(ModalScreen):

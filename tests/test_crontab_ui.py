@@ -27,3 +27,76 @@ def test_smoke_describe():
     result = crontab_ui.describe("*", "*", "*", "*", "*")
     assert isinstance(result, str)
     assert len(result) > 0
+
+
+import pytest
+
+
+class TestValidateCronField:
+    """Tests for validate_cron_field(value, min_val, max_val)."""
+
+    # --- Valid cases ---
+
+    def test_wildcard(self):
+        assert crontab_ui.validate_cron_field("*", 0, 59) == (True, "")
+
+    def test_single_number_in_range(self):
+        assert crontab_ui.validate_cron_field("0", 0, 59) == (True, "")
+        assert crontab_ui.validate_cron_field("59", 0, 59) == (True, "")
+
+    def test_step_wildcard(self):
+        assert crontab_ui.validate_cron_field("*/5", 0, 59) == (True, "")
+        assert crontab_ui.validate_cron_field("*/15", 0, 59) == (True, "")
+
+    def test_step_with_range(self):
+        assert crontab_ui.validate_cron_field("1-30/5", 0, 59) == (True, "")
+
+    def test_range(self):
+        assert crontab_ui.validate_cron_field("1-5", 0, 59) == (True, "")
+        assert crontab_ui.validate_cron_field("0-6", 0, 6) == (True, "")
+
+    def test_list(self):
+        assert crontab_ui.validate_cron_field("1,3,5", 0, 59) == (True, "")
+        assert crontab_ui.validate_cron_field("0,6", 0, 6) == (True, "")
+
+    def test_mixed_list_with_ranges(self):
+        assert crontab_ui.validate_cron_field("1-5,10,15-20", 0, 59) == (True, "")
+
+    # --- Invalid cases ---
+
+    def test_out_of_range_high(self):
+        ok, msg = crontab_ui.validate_cron_field("60", 0, 59)
+        assert not ok
+        assert "60" in msg
+
+    def test_out_of_range_low(self):
+        ok, msg = crontab_ui.validate_cron_field("-1", 0, 59)
+        assert not ok
+
+    def test_non_numeric(self):
+        ok, msg = crontab_ui.validate_cron_field("foo", 0, 59)
+        assert not ok
+
+    def test_empty_string(self):
+        ok, msg = crontab_ui.validate_cron_field("", 0, 59)
+        assert not ok
+
+    def test_reversed_range(self):
+        ok, msg = crontab_ui.validate_cron_field("30-10", 0, 59)
+        assert not ok
+
+    def test_step_zero(self):
+        ok, msg = crontab_ui.validate_cron_field("*/0", 0, 59)
+        assert not ok
+
+    def test_step_negative(self):
+        ok, msg = crontab_ui.validate_cron_field("*/-1", 0, 59)
+        assert not ok
+
+    def test_range_out_of_bounds(self):
+        ok, msg = crontab_ui.validate_cron_field("0-7", 0, 6)
+        assert not ok
+
+    def test_spaces_in_value(self):
+        ok, msg = crontab_ui.validate_cron_field("1 2", 0, 59)
+        assert not ok
