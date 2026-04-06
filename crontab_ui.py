@@ -344,10 +344,11 @@ def load_crontab() -> list[dict]:
 def save_crontab(jobs: list[dict]) -> tuple[bool, str]:
     lines = ["# Managed by crontab-ui\n"]
     for j in jobs:
+        cmd = sanitize_cmd(j['cmd'])
         if j.get("at_shortcut"):
-            lines.append(f"{j['at_shortcut']} {j['cmd']}\n")
+            lines.append(f"{j['at_shortcut']} {cmd}\n")
         else:
-            lines.append(f"{j['min']} {j['hr']} {j['dom']} {j['mo']} {j['dow']} {j['cmd']}\n")
+            lines.append(f"{j['min']} {j['hr']} {j['dom']} {j['mo']} {j['dow']} {cmd}\n")
     try:
         proc = subprocess.run(["crontab", "-"], input="".join(lines),
                                capture_output=True, text=True)
@@ -487,6 +488,11 @@ def validate_cron_expression(min_: str, hr: str, dom: str, mo: str, dow: str) ->
         if not ok:
             return False, f"{name}: {msg}"
     return True, ""
+
+
+def sanitize_cmd(cmd: str) -> str:
+    """Remove characters that would corrupt the crontab file."""
+    return cmd.replace("\x00", "").replace("\r", "").replace("\n", " ").strip()
 
 
 # ── Confirm Modal ─────────────────────────────────────────────────────────────
@@ -818,6 +824,7 @@ class EditorScreen(Screen):
 
     def action_save(self):
         min_, hr, dom, mo, dow, cmd = self.get_fields()
+        cmd = sanitize_cmd(cmd)
         if not cmd:
             self.notify(T["err_no_cmd"], severity="error")
             return

@@ -224,3 +224,49 @@ class TestSaveCrontabAtSyntax:
             crontab_ui.save_crontab(jobs)
             written = mocked.call_args[1]["input"]
         assert "0 9 * * 1-5 /work.sh" in written
+
+
+class TestSanitizeCmd:
+    """Tests for sanitize_cmd(cmd)."""
+
+    def test_normal_command_unchanged(self):
+        assert crontab_ui.sanitize_cmd("/usr/bin/backup.sh --verbose") == "/usr/bin/backup.sh --verbose"
+
+    def test_strips_newlines(self):
+        assert crontab_ui.sanitize_cmd("echo hello\necho world") == "echo hello echo world"
+
+    def test_strips_carriage_return(self):
+        assert crontab_ui.sanitize_cmd("echo hello\r\n") == "echo hello"
+
+    def test_strips_null_bytes(self):
+        assert crontab_ui.sanitize_cmd("echo\x00hello") == "echohello"
+
+    def test_strips_leading_trailing_whitespace(self):
+        assert crontab_ui.sanitize_cmd("  /bin/test  ") == "/bin/test"
+
+    def test_preserves_tabs_in_args(self):
+        assert crontab_ui.sanitize_cmd("echo\thello") == "echo\thello"
+
+    def test_empty_after_sanitize(self):
+        assert crontab_ui.sanitize_cmd("\n\r\x00") == ""
+
+    def test_command_with_pipe(self):
+        assert crontab_ui.sanitize_cmd("cat /log | grep error") == "cat /log | grep error"
+
+    def test_command_with_redirect(self):
+        assert crontab_ui.sanitize_cmd("backup.sh > /dev/null 2>&1") == "backup.sh > /dev/null 2>&1"
+
+
+class TestSaveCrontabSanitization:
+    """Tests that save_crontab sanitizes commands."""
+
+    def test_newline_in_cmd_stripped(self):
+        jobs = [{"min": "0", "hr": "0", "dom": "*", "mo": "*", "dow": "*",
+                 "cmd": "echo hello\necho evil", "raw": "0 0 * * * echo hello"}]
+        with mock.patch("subprocess.run") as mocked:
+            mocked.return_value = mock.Mock(returncode=0, stderr="")
+            crontab_ui.save_crontab(jobs)
+            written = mocked.call_args[1]["input"]
+        job_lines = [l for l in written.splitlines() if not l.startswith("#")]
+        assert len(job_lines) == 1
+        assert "\n" not in job_lines[0]
