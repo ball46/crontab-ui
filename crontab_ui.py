@@ -9,7 +9,7 @@ Usage:
 """
 
 # ── Auto-install dependency ───────────────────────────────────────────────────
-import sys, subprocess, os, argparse, glob, shutil
+import sys, subprocess, os, argparse, glob, shutil, re
 
 VENV_DIR = os.path.join(os.path.expanduser("~"), ".local", "share", "crontab-ui", "venv")
 
@@ -297,6 +297,26 @@ T    = STRINGS[LANG]
 
 # ── Crontab helpers ───────────────────────────────────────────────────────────
 
+AT_SHORTCUTS = {
+    "@yearly":   "0 0 1 1 *",
+    "@annually": "0 0 1 1 *",
+    "@monthly":  "0 0 1 * *",
+    "@weekly":   "0 0 * * 0",
+    "@daily":    "0 0 * * *",
+    "@midnight": "0 0 * * *",
+    "@hourly":   "0 * * * *",
+    "@reboot":   None,  # No 5-field equivalent
+}
+
+CRON_FIELD_RANGES = [
+    (0, 59, "minute"),
+    (0, 23, "hour"),
+    (1, 31, "day of month"),
+    (1, 12, "month"),
+    (0, 7, "day of week"),
+]
+
+
 def load_crontab() -> list[dict]:
     try:
         result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
@@ -344,10 +364,13 @@ def load_crontab() -> list[dict]:
 def save_crontab(jobs: list[dict]) -> tuple[bool, str]:
     lines = ["# Managed by crontab-ui\n"]
     for j in jobs:
-        cmd = sanitize_cmd(j['cmd'])
-        if j.get("at_shortcut"):
+        if j.get("min") == "?":
+            lines.append(j["raw"] + "\n")
+        elif j.get("at_shortcut"):
+            cmd = sanitize_cmd(j['cmd'])
             lines.append(f"{j['at_shortcut']} {cmd}\n")
         else:
+            cmd = sanitize_cmd(j['cmd'])
             lines.append(f"{j['min']} {j['hr']} {j['dom']} {j['mo']} {j['dow']} {cmd}\n")
     try:
         proc = subprocess.run(["crontab", "-"], input="".join(lines),
@@ -357,7 +380,10 @@ def save_crontab(jobs: list[dict]) -> tuple[bool, str]:
         return False, "crontab command not found"
 
 
-def describe(min_: str, hr: str, dom: str, mo: str, dow: str) -> str:
+def describe(min_: str, hr: str, dom: str, mo: str, dow: str,
+             at_shortcut: str | None = None) -> str:
+    if at_shortcut == "@reboot":
+        return T["desc_at_reboot"]
     if min_ == "-" and hr == "-":
         return T["desc_at_reboot"]
     expr = f"{min_} {hr} {dom} {mo} {dow}"
@@ -388,18 +414,6 @@ def get_presets():
         (T["pre_weekly"],    "0 2 * * 0"),
         (T["pre_monthly"],   "0 0 1 * *"),
     ]
-
-
-AT_SHORTCUTS = {
-    "@yearly":   "0 0 1 1 *",
-    "@annually": "0 0 1 1 *",
-    "@monthly":  "0 0 1 * *",
-    "@weekly":   "0 0 * * 0",
-    "@daily":    "0 0 * * *",
-    "@midnight": "0 0 * * *",
-    "@hourly":   "0 * * * *",
-    "@reboot":   None,  # No 5-field equivalent
-}
 
 
 def validate_cron_field(value: str, min_val: int, max_val: int) -> tuple[bool, str]:
@@ -471,17 +485,10 @@ def validate_cron_field(value: str, min_val: int, max_val: int) -> tuple[bool, s
     return True, ""
 
 
-CRON_FIELD_RANGES = [
-    (0, 59, "minute"),
-    (0, 23, "hour"),
-    (1, 31, "day of month"),
-    (1, 12, "month"),
-    (0, 7, "day of week"),
-]
-
-
 def validate_cron_expression(min_: str, hr: str, dom: str, mo: str, dow: str) -> tuple[bool, str]:
     """Validate all 5 cron fields. Returns (ok, error_message)."""
+    if min_ == "-" and hr == "-":
+        return True, ""
     fields = [min_, hr, dom, mo, dow]
     for value, (lo, hi, name) in zip(fields, CRON_FIELD_RANGES):
         ok, msg = validate_cron_field(value, lo, hi)
@@ -490,9 +497,14 @@ def validate_cron_expression(min_: str, hr: str, dom: str, mo: str, dow: str) ->
     return True, ""
 
 
+_CONTROL_CHARS_RE = re.compile(r'[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f]')
+
+
 def sanitize_cmd(cmd: str) -> str:
-    """Remove characters that would corrupt the crontab file."""
-    return cmd.replace("\x00", "").replace("\r", "").replace("\n", " ").strip()
+    """Remove characters that would corrupt the crontab file or terminal."""
+    cmd = cmd.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+    cmd = _CONTROL_CHARS_RE.sub("", cmd)
+    return cmd.strip()
 
 
 # ── Confirm Modal ─────────────────────────────────────────────────────────────
@@ -840,14 +852,20 @@ class EditorScreen(Screen):
         if not found:
             def on_confirm(confirmed):
                 if confirmed:
-                    self.dismiss({"min": min_, "hr": hr, "dom": dom, "mo": mo, "dow": dow,
-                                  "cmd": cmd, "raw": f"{min_} {hr} {dom} {mo} {dow} {cmd}"})
+                    result = {"min": min_, "hr": hr, "dom": dom, "mo": mo, "dow": dow,
+                              "cmd": cmd, "raw": f"{min_} {hr} {dom} {mo} {dow} {cmd}"}
+                    if self.editing_job and self.editing_job.get("at_shortcut"):
+                        result["at_shortcut"] = self.editing_job["at_shortcut"]
+                    self.dismiss(result)
             self.app.push_screen(
                 ConfirmModal(T["cmd_not_found"].format(cmd=exe),
                              ok_label=T["btn_save_anyway"]), on_confirm)
             return
-        self.dismiss({"min": min_, "hr": hr, "dom": dom, "mo": mo, "dow": dow,
-                      "cmd": cmd, "raw": f"{min_} {hr} {dom} {mo} {dow} {cmd}"})
+        result = {"min": min_, "hr": hr, "dom": dom, "mo": mo, "dow": dow,
+                  "cmd": cmd, "raw": f"{min_} {hr} {dom} {mo} {dow} {cmd}"}
+        if self.editing_job and self.editing_job.get("at_shortcut"):
+            result["at_shortcut"] = self.editing_job["at_shortcut"]
+        self.dismiss(result)
 
     def action_cancel(self):
         self.dismiss(None)
@@ -906,7 +924,8 @@ class MainScreen(Screen):
         else:
             for j in self.jobs:
                 tbl.add_row(j["min"], j["hr"], j["dom"], j["mo"], j["dow"],
-                            j["cmd"], describe(j["min"], j["hr"], j["dom"], j["mo"], j["dow"]))
+                            j["cmd"], describe(j["min"], j["hr"], j["dom"], j["mo"], j["dow"],
+                                               at_shortcut=j.get("at_shortcut")))
         self._status(T["loaded"].format(n=len(self.jobs)))
 
     def _status(self, msg: str, error: bool = False):

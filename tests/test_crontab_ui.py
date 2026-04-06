@@ -319,3 +319,38 @@ class TestIntegration:
         clean = crontab_ui.sanitize_cmd(dirty)
         assert "\n" not in clean
         assert "/evil.sh" in clean  # preserved but on same line
+
+
+class TestReviewFixes:
+    """Tests for issues found during code review."""
+
+    def test_validate_cron_expression_accepts_reboot_sentinel(self):
+        """@reboot sentinel fields should pass validation."""
+        ok, msg = crontab_ui.validate_cron_expression("-", "-", "-", "-", "-")
+        assert ok, f"@reboot sentinel rejected: {msg}"
+
+    def test_sanitize_cmd_strips_form_feed(self):
+        assert crontab_ui.sanitize_cmd("echo\x0chello") == "echohello"
+
+    def test_sanitize_cmd_strips_vertical_tab(self):
+        assert crontab_ui.sanitize_cmd("echo\x0bhello") == "echohello"
+
+    def test_sanitize_cmd_strips_escape(self):
+        assert crontab_ui.sanitize_cmd("echo\x1b[31mhello") == "echo[31mhello"
+
+    def test_unknown_at_token_roundtrip(self):
+        """Unknown @-tokens should be preserved verbatim, not corrupted."""
+        with mock.patch("subprocess.run") as mocked:
+            mocked.return_value = mock.Mock(stdout="@unknown /cmd.sh\n", returncode=0)
+            jobs = crontab_ui.load_crontab()
+        with mock.patch("subprocess.run") as mocked:
+            mocked.return_value = mock.Mock(returncode=0, stderr="")
+            crontab_ui.save_crontab(jobs)
+            written = mocked.call_args[1]["input"]
+        assert "? ? ? ? ?" not in written
+        assert "@unknown /cmd.sh" in written
+
+    def test_describe_with_at_shortcut_param(self):
+        """describe() with at_shortcut='@reboot' returns reboot description."""
+        result = crontab_ui.describe("-", "-", "-", "-", "-", at_shortcut="@reboot")
+        assert result == crontab_ui.T["desc_at_reboot"]
