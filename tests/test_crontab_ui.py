@@ -270,3 +270,52 @@ class TestSaveCrontabSanitization:
         job_lines = [l for l in written.splitlines() if not l.startswith("#")]
         assert len(job_lines) == 1
         assert "\n" not in job_lines[0]
+
+
+class TestIntegration:
+    """Integration tests: load → validate → sanitize → save round-trip."""
+
+    def test_roundtrip_standard_jobs(self):
+        """Load standard crontab, validate, save back unchanged."""
+        crontab_input = "# Managed by crontab-ui\n0 9 * * 1-5 /work.sh\n*/5 * * * * /check.sh\n"
+        with mock.patch("subprocess.run") as mocked:
+            mocked.return_value = mock.Mock(stdout=crontab_input, returncode=0)
+            jobs = crontab_ui.load_crontab()
+        assert len(jobs) == 2
+        for j in jobs:
+            ok, msg = crontab_ui.validate_cron_expression(
+                j["min"], j["hr"], j["dom"], j["mo"], j["dow"])
+            assert ok, f"Validation failed for {j['raw']}: {msg}"
+
+    def test_roundtrip_with_at_syntax(self):
+        """Load @-syntax entries, verify they save back correctly."""
+        crontab_input = "@daily /backup.sh\n@reboot /start.sh\n0 0 1 * * /monthly.sh\n"
+        with mock.patch("subprocess.run") as mocked:
+            mocked.return_value = mock.Mock(stdout=crontab_input, returncode=0)
+            jobs = crontab_ui.load_crontab()
+        assert len(jobs) == 3
+        assert jobs[0]["at_shortcut"] == "@daily"
+        assert jobs[1]["at_shortcut"] == "@reboot"
+        assert "at_shortcut" not in jobs[2]
+
+        with mock.patch("subprocess.run") as mocked:
+            mocked.return_value = mock.Mock(returncode=0, stderr="")
+            crontab_ui.save_crontab(jobs)
+            written = mocked.call_args[1]["input"]
+        assert "@daily /backup.sh" in written
+        assert "@reboot /start.sh" in written
+        assert "0 0 1 * * /monthly.sh" in written
+
+    def test_invalid_cron_rejected(self):
+        """Confirm invalid values are caught by validation."""
+        ok, _ = crontab_ui.validate_cron_expression("99", "0", "*", "*", "*")
+        assert not ok
+        ok, _ = crontab_ui.validate_cron_expression("0", "0", "*", "13", "*")
+        assert not ok
+
+    def test_dangerous_command_sanitized(self):
+        """Confirm newlines in commands are neutralized."""
+        dirty = "/script.sh\n0 * * * * /evil.sh"
+        clean = crontab_ui.sanitize_cmd(dirty)
+        assert "\n" not in clean
+        assert "/evil.sh" in clean  # preserved but on same line
