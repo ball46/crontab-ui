@@ -160,6 +160,7 @@ STRINGS = {
         "no_job_copied": "No job copied yet",
         "cmd_not_found":  "Command not found: {cmd}\nSave anyway?",
         "btn_save_anyway": "Save anyway",
+        "err_invalid_cron": "Invalid cron expression:\n{msg}",
     },
     "th": {
         "app_subtitle":     "จัดการ crontab อย่างง่ายดาย",
@@ -238,6 +239,7 @@ STRINGS = {
         "no_job_copied": "ยังไม่ได้คัดลอกงาน",
         "cmd_not_found":  "ไม่พบคำสั่ง: {cmd}\nบันทึกต่อหรือไม่?",
         "btn_save_anyway": "บันทึกต่อ",
+        "err_invalid_cron": "cron expression ไม่ถูกต้อง:\n{msg}",
     },
 }
 
@@ -424,6 +426,25 @@ def validate_cron_field(value: str, min_val: int, max_val: int) -> tuple[bool, s
         ok, msg = _check_range_part(part.strip())
         if not ok:
             return ok, msg
+    return True, ""
+
+
+CRON_FIELD_RANGES = [
+    (0, 59, "minute"),
+    (0, 23, "hour"),
+    (1, 31, "day of month"),
+    (1, 12, "month"),
+    (0, 7, "day of week"),
+]
+
+
+def validate_cron_expression(min_: str, hr: str, dom: str, mo: str, dow: str) -> tuple[bool, str]:
+    """Validate all 5 cron fields. Returns (ok, error_message)."""
+    fields = [min_, hr, dom, mo, dow]
+    for value, (lo, hi, name) in zip(fields, CRON_FIELD_RANGES):
+        ok, msg = validate_cron_field(value, lo, hi)
+        if not ok:
+            return False, f"{name}: {msg}"
     return True, ""
 
 
@@ -758,6 +779,11 @@ class EditorScreen(Screen):
         min_, hr, dom, mo, dow, cmd = self.get_fields()
         if not cmd:
             self.notify(T["err_no_cmd"], severity="error")
+            return
+        # Validate cron fields
+        ok, msg = validate_cron_expression(min_, hr, dom, mo, dow)
+        if not ok:
+            self.notify(T["err_invalid_cron"].format(msg=msg), severity="error")
             return
         # extract executable from command
         parts = cmd.split()

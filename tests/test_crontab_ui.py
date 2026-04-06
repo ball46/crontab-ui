@@ -100,3 +100,34 @@ class TestValidateCronField:
     def test_spaces_in_value(self):
         ok, msg = crontab_ui.validate_cron_field("1 2", 0, 59)
         assert not ok
+
+
+class TestValidateCronExpression:
+    """Tests for validate_cron_expression(min_, hr, dom, mo, dow)."""
+
+    def test_valid_standard(self):
+        assert crontab_ui.validate_cron_expression("0", "9", "*", "*", "1-5") == (True, "")
+
+    def test_valid_all_wildcard(self):
+        assert crontab_ui.validate_cron_expression("*", "*", "*", "*", "*") == (True, "")
+
+    def test_invalid_minute(self):
+        ok, msg = crontab_ui.validate_cron_expression("60", "0", "*", "*", "*")
+        assert not ok
+        assert "minute" in msg.lower() or "60" in msg
+
+    def test_invalid_hour(self):
+        ok, msg = crontab_ui.validate_cron_expression("0", "25", "*", "*", "*")
+        assert not ok
+
+    def test_invalid_dom(self):
+        ok, msg = crontab_ui.validate_cron_expression("0", "0", "32", "*", "*")
+        assert not ok
+
+    def test_invalid_month(self):
+        ok, msg = crontab_ui.validate_cron_expression("0", "0", "*", "13", "*")
+        assert not ok
+
+    def test_invalid_dow(self):
+        ok, msg = crontab_ui.validate_cron_expression("0", "0", "*", "*", "8")
+        assert not ok
