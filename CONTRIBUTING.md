@@ -19,9 +19,10 @@ Thanks for your interest in contributing! 🎉
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/my-feature`
 3. Make your changes in `crontab_ui.py`
-4. Test manually: `python3 crontab_ui.py --lang en` and `--lang th`
-5. Commit with a clear message: `git commit -m "Add: description"`
-6. Push and open a Pull Request
+4. Run tests: `pip install -r requirements-dev.txt && python3 -m pytest tests/ -v`
+5. Test manually: `python3 crontab_ui.py --lang en` and `--lang th`
+6. Commit with a clear message: `git commit -m "Add: description"`
+7. Push and open a Pull Request
 
 ### Code Style
 

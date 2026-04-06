@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-04-06
+
+### Added
+- **Cron expression validation** — minute, hour, day, month, and day-of-week fields are validated against their allowed ranges before saving. Invalid values (e.g., `60` for minute, `foo` for hour) are rejected with a clear error message in both English and Thai.
+- **`@reboot` / `@daily` / `@weekly` syntax support** — `load_crontab()` now correctly parses `@reboot`, `@daily`, `@midnight`, `@weekly`, `@monthly`, `@yearly`, `@annually`, and `@hourly` entries. These are preserved in their original shortcut form when saving back.
+- **Input sanitization** — newlines, null bytes, and other control characters in the command field are stripped before writing to crontab, preventing file corruption.
+- **Test suite** — 54 unit and integration tests using pytest, covering validation, `@`-syntax round-trips, and sanitization.
+
+---
+
 ## [1.2.0] - 2026-03-08
 
 ### Added

@@ -94,8 +94,39 @@ Displays all existing cron jobs loaded from your current crontab, with a human-r
 - **Month**: toggle buttons (Jan–Dec) with quick-select button (All)
 - Multi-select supported — generates proper cron syntax (e.g., `1,3,5` or `3,7,12`)
 - **Live preview** updates the cron expression and description in real time
+- **Cron expression validation** — invalid values are rejected with a clear error before saving
+- **Input sanitization** — dangerous characters (newlines, control chars) are stripped automatically
 - **Catppuccin Mocha** dark theme for comfortable terminal use
 - Press `Ctrl+S` to save — writes directly to crontab, no vim needed
+
+---
+
+## Supported Cron Syntax
+
+### Standard 5-field format
+
+```
+┌───────────── minute (0-59)
+│ ┌───────────── hour (0-23)
+│ │ ┌───────────── day of month (1-31)
+│ │ │ ┌───────────── month (1-12)
+│ │ │ │ ┌───────────── day of week (0-7, 0 and 7 = Sunday)
+│ │ │ │ │
+* * * * * /path/to/command
+```
+
+Supports: wildcards (`*`), ranges (`1-5`), steps (`*/5`, `1-30/2`), and lists (`1,3,5`)
+
+### @-shortcut syntax
+
+| Shortcut | Equivalent | Description |
+|---|---|---|
+| `@reboot` | *(run at startup)* | At system reboot |
+| `@yearly` / `@annually` | `0 0 1 1 *` | Once a year (Jan 1, midnight) |
+| `@monthly` | `0 0 1 * *` | Once a month (1st, midnight) |
+| `@weekly` | `0 0 * * 0` | Once a week (Sunday, midnight) |
+| `@daily` / `@midnight` | `0 0 * * *` | Once a day (midnight) |
+| `@hourly` | `0 * * * *` | Once an hour |
 
 ---
 
