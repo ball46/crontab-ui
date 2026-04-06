@@ -131,3 +131,96 @@ class TestValidateCronExpression:
     def test_invalid_dow(self):
         ok, msg = crontab_ui.validate_cron_expression("0", "0", "*", "*", "8")
         assert not ok
+
+
+class TestAtSyntax:
+    """Tests for @reboot, @daily, etc. in load/save."""
+
+    def test_at_shortcuts_map(self):
+        shortcuts = crontab_ui.AT_SHORTCUTS
+        assert "@reboot" in shortcuts
+        assert "@yearly" in shortcuts
+        assert "@annually" in shortcuts
+        assert "@monthly" in shortcuts
+        assert "@weekly" in shortcuts
+        assert "@daily" in shortcuts
+        assert "@midnight" in shortcuts
+        assert "@hourly" in shortcuts
+
+    def test_at_yearly_expands(self):
+        assert crontab_ui.AT_SHORTCUTS["@yearly"] == "0 0 1 1 *"
+
+    def test_at_daily_expands(self):
+        assert crontab_ui.AT_SHORTCUTS["@daily"] == "0 0 * * *"
+
+    def test_at_hourly_expands(self):
+        assert crontab_ui.AT_SHORTCUTS["@hourly"] == "0 * * * *"
+
+
+class TestLoadCrontabAtSyntax:
+
+    def test_parse_at_daily(self):
+        crontab_output = "@daily /usr/bin/backup.sh\n"
+        with mock.patch("subprocess.run") as mocked:
+            mocked.return_value = mock.Mock(stdout=crontab_output, returncode=0)
+            jobs = crontab_ui.load_crontab()
+        assert len(jobs) == 1
+        assert jobs[0]["min"] == "0"
+        assert jobs[0]["hr"] == "0"
+        assert jobs[0]["dom"] == "*"
+        assert jobs[0]["mo"] == "*"
+        assert jobs[0]["dow"] == "*"
+        assert jobs[0]["cmd"] == "/usr/bin/backup.sh"
+        assert jobs[0]["at_shortcut"] == "@daily"
+
+    def test_parse_at_reboot(self):
+        crontab_output = "@reboot /start.sh --daemon\n"
+        with mock.patch("subprocess.run") as mocked:
+            mocked.return_value = mock.Mock(stdout=crontab_output, returncode=0)
+            jobs = crontab_ui.load_crontab()
+        assert len(jobs) == 1
+        assert jobs[0]["at_shortcut"] == "@reboot"
+        assert jobs[0]["cmd"] == "/start.sh --daemon"
+        assert jobs[0]["min"] == "-"
+        assert jobs[0]["hr"] == "-"
+
+    def test_parse_mixed_standard_and_at(self):
+        crontab_output = "0 9 * * 1-5 /work.sh\n@hourly /check.sh\n"
+        with mock.patch("subprocess.run") as mocked:
+            mocked.return_value = mock.Mock(stdout=crontab_output, returncode=0)
+            jobs = crontab_ui.load_crontab()
+        assert len(jobs) == 2
+        assert "at_shortcut" not in jobs[0]
+        assert jobs[1]["at_shortcut"] == "@hourly"
+
+
+class TestSaveCrontabAtSyntax:
+
+    def test_save_at_daily_uses_shortcut(self):
+        jobs = [{"min": "0", "hr": "0", "dom": "*", "mo": "*", "dow": "*",
+                 "cmd": "/backup.sh", "at_shortcut": "@daily",
+                 "raw": "@daily /backup.sh"}]
+        with mock.patch("subprocess.run") as mocked:
+            mocked.return_value = mock.Mock(returncode=0, stderr="")
+            crontab_ui.save_crontab(jobs)
+            written = mocked.call_args[1]["input"]
+        assert "@daily /backup.sh" in written
+
+    def test_save_at_reboot_uses_shortcut(self):
+        jobs = [{"min": "-", "hr": "-", "dom": "-", "mo": "-", "dow": "-",
+                 "cmd": "/start.sh", "at_shortcut": "@reboot",
+                 "raw": "@reboot /start.sh"}]
+        with mock.patch("subprocess.run") as mocked:
+            mocked.return_value = mock.Mock(returncode=0, stderr="")
+            crontab_ui.save_crontab(jobs)
+            written = mocked.call_args[1]["input"]
+        assert "@reboot /start.sh" in written
+
+    def test_save_standard_job_unchanged(self):
+        jobs = [{"min": "0", "hr": "9", "dom": "*", "mo": "*", "dow": "1-5",
+                 "cmd": "/work.sh", "raw": "0 9 * * 1-5 /work.sh"}]
+        with mock.patch("subprocess.run") as mocked:
+            mocked.return_value = mock.Mock(returncode=0, stderr="")
+            crontab_ui.save_crontab(jobs)
+            written = mocked.call_args[1]["input"]
+        assert "0 9 * * 1-5 /work.sh" in written

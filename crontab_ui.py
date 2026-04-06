@@ -161,6 +161,7 @@ STRINGS = {
         "cmd_not_found":  "Command not found: {cmd}\nSave anyway?",
         "btn_save_anyway": "Save anyway",
         "err_invalid_cron": "Invalid cron expression:\n{msg}",
+        "desc_at_reboot": "At system reboot",
     },
     "th": {
         "app_subtitle":     "จัดการ crontab อย่างง่ายดาย",
@@ -240,6 +241,7 @@ STRINGS = {
         "cmd_not_found":  "ไม่พบคำสั่ง: {cmd}\nบันทึกต่อหรือไม่?",
         "btn_save_anyway": "บันทึกต่อ",
         "err_invalid_cron": "cron expression ไม่ถูกต้อง:\n{msg}",
+        "desc_at_reboot": "เมื่อระบบรีบูต",
     },
 }
 
@@ -306,21 +308,46 @@ def load_crontab() -> list[dict]:
         s = line.strip()
         if not s or s.startswith("#"):
             continue
+        # Handle @-shortcut syntax
+        if s.startswith("@"):
+            parts = s.split(None, 1)
+            keyword = parts[0].lower()
+            cmd = parts[1] if len(parts) > 1 else ""
+            if keyword in AT_SHORTCUTS:
+                equiv = AT_SHORTCUTS[keyword]
+                if equiv is not None:
+                    fields = equiv.split()
+                    jobs.append({"raw": s, "at_shortcut": keyword,
+                                 "min": fields[0], "hr": fields[1],
+                                 "dom": fields[2], "mo": fields[3],
+                                 "dow": fields[4], "cmd": cmd})
+                else:
+                    jobs.append({"raw": s, "at_shortcut": keyword,
+                                 "min": "-", "hr": "-", "dom": "-",
+                                 "mo": "-", "dow": "-", "cmd": cmd})
+            else:
+                jobs.append({"raw": s, "min": "?", "hr": "?", "dom": "?",
+                             "mo": "?", "dow": "?", "cmd": s})
+            continue
+        # Standard 5-field syntax
         parts = s.split(None, 5)
         if len(parts) >= 6:
             jobs.append({"raw": s,
                          "min": parts[0], "hr":  parts[1], "dom": parts[2],
                          "mo":  parts[3], "dow": parts[4], "cmd": parts[5]})
         else:
-            jobs.append({"raw": s, "min":"?","hr":"?","dom":"?",
-                         "mo":"?","dow":"?","cmd": s})
+            jobs.append({"raw": s, "min": "?", "hr": "?", "dom": "?",
+                         "mo": "?", "dow": "?", "cmd": s})
     return jobs
 
 
 def save_crontab(jobs: list[dict]) -> tuple[bool, str]:
     lines = ["# Managed by crontab-ui\n"]
     for j in jobs:
-        lines.append(f"{j['min']} {j['hr']} {j['dom']} {j['mo']} {j['dow']} {j['cmd']}\n")
+        if j.get("at_shortcut"):
+            lines.append(f"{j['at_shortcut']} {j['cmd']}\n")
+        else:
+            lines.append(f"{j['min']} {j['hr']} {j['dom']} {j['mo']} {j['dow']} {j['cmd']}\n")
     try:
         proc = subprocess.run(["crontab", "-"], input="".join(lines),
                                capture_output=True, text=True)
@@ -330,6 +357,8 @@ def save_crontab(jobs: list[dict]) -> tuple[bool, str]:
 
 
 def describe(min_: str, hr: str, dom: str, mo: str, dow: str) -> str:
+    if min_ == "-" and hr == "-":
+        return T["desc_at_reboot"]
     expr = f"{min_} {hr} {dom} {mo} {dow}"
     if expr == "* * * * *":   return T["desc_every_min"]
     if expr == "0 * * * *":   return T["desc_every_hr"]
@@ -358,6 +387,18 @@ def get_presets():
         (T["pre_weekly"],    "0 2 * * 0"),
         (T["pre_monthly"],   "0 0 1 * *"),
     ]
+
+
+AT_SHORTCUTS = {
+    "@yearly":   "0 0 1 1 *",
+    "@annually": "0 0 1 1 *",
+    "@monthly":  "0 0 1 * *",
+    "@weekly":   "0 0 * * 0",
+    "@daily":    "0 0 * * *",
+    "@midnight": "0 0 * * *",
+    "@hourly":   "0 * * * *",
+    "@reboot":   None,  # No 5-field equivalent
+}
 
 
 def validate_cron_field(value: str, min_val: int, max_val: int) -> tuple[bool, str]:
